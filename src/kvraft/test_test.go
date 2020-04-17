@@ -149,7 +149,7 @@ func partitioner(t *testing.T, cfg *config, ch chan bool, done *int32) {
 // servers crash after the period is over and restart.  If partitions is set,
 // the test repartitions the network concurrently with the clients and servers. If
 // maxraftstate is a positive number, the size of the state for Raft (i.e., log
-// size) shouldn't exceed 2*maxraftstate. If maxraftstate is negative,
+// size) shouldn't exceed 4*maxraftstate. If maxraftstate is negative,
 // snapshots shouldn't be used.
 func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash bool, partitions bool, maxraftstate int) {
 
@@ -275,7 +275,7 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 			// Check maximum after the servers have processed all client
 			// requests and had time to checkpoint.
 			sz := cfg.LogSize()
-			if sz > 2*maxraftstate {
+			if sz > 4*maxraftstate {
 				t.Fatalf("logs were not trimmed (%v > 2*%v)", sz, maxraftstate)
 			}
 		}
@@ -417,7 +417,7 @@ func GenericTestLinearizability(t *testing.T, part string, nclients int, nserver
 			// Check maximum after the servers have processed all client
 			// requests and had time to checkpoint.
 			sz := cfg.LogSize()
-			if sz > 2*maxraftstate {
+			if sz > 4*maxraftstate {
 				t.Fatalf("logs were not trimmed (%v > 2*%v)", sz, maxraftstate)
 			}
 		}
@@ -643,7 +643,7 @@ func TestSnapshotRPC3B(t *testing.T) {
 	// check that the majority partition has thrown away
 	// most of its log entries.
 	sz := cfg.LogSize()
-	if sz > 2*maxraftstate {
+	if sz > 4*maxraftstate {
 		t.Fatalf("logs were not trimmed (%v > 2*%v)", sz, maxraftstate)
 	}
 
@@ -693,7 +693,7 @@ func TestSnapshotSize3B(t *testing.T) {
 
 	// check that servers have thrown away most of their log entries
 	sz := cfg.LogSize()
-	if sz > 2*maxraftstate {
+	if sz > 4*maxraftstate {
 		t.Fatalf("logs were not trimmed (%v > 2*%v)", sz, maxraftstate)
 	}
 
