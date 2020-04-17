@@ -276,7 +276,7 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 			// requests and had time to checkpoint.
 			sz := cfg.LogSize()
 			if sz > 4*maxraftstate {
-				t.Fatalf("logs were not trimmed (%v > 2*%v)", sz, maxraftstate)
+				t.Fatalf("logs were not trimmed (%v > 4*%v)", sz, maxraftstate)
 			}
 		}
 		if maxraftstate < 0 {
@@ -418,7 +418,7 @@ func GenericTestLinearizability(t *testing.T, part string, nclients int, nserver
 			// requests and had time to checkpoint.
 			sz := cfg.LogSize()
 			if sz > 4*maxraftstate {
-				t.Fatalf("logs were not trimmed (%v > 2*%v)", sz, maxraftstate)
+				t.Fatalf("logs were not trimmed (%v > 4*%v)", sz, maxraftstate)
 			}
 		}
 	}
@@ -644,7 +644,7 @@ func TestSnapshotRPC3B(t *testing.T) {
 	// most of its log entries.
 	sz := cfg.LogSize()
 	if sz > 4*maxraftstate {
-		t.Fatalf("logs were not trimmed (%v > 2*%v)", sz, maxraftstate)
+		t.Fatalf("logs were not trimmed (%v > 4*%v)", sz, maxraftstate)
 	}
 
 	// now make group that requires participation of
@@ -694,7 +694,7 @@ func TestSnapshotSize3B(t *testing.T) {
 	// check that servers have thrown away most of their log entries
 	sz := cfg.LogSize()
 	if sz > 4*maxraftstate {
-		t.Fatalf("logs were not trimmed (%v > 2*%v)", sz, maxraftstate)
+		t.Fatalf("logs were not trimmed (%v > 4*%v)", sz, maxraftstate)
 	}
 
 	// check that the snapshots are not unreasonably large
