@@ -188,6 +188,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	reply.Term = rf.currentTerm
+	// reply false immediately if sender's term < currentTerm
 	if args.Term < rf.currentTerm {
 		reply.Success = false
 		return
@@ -196,14 +197,19 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// to reach this line, the sender must have equal or higher term than me(very likely to be the current leader), reset timer
 	rf.timestamp = time.Now()
 
-	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+	// reply false if log doesn't contain an entry at preLogIndex whose term matches preLogTerm
+	// remember to handle the case where prevLogIndex points beyond the end of your log
+	if args.PrevLogIndex >= len(rf.log) || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
 		reply.Success = false
 		return
 	}
+
 	// TODO delete and append entries
 
 	reply.Success = true
+
 	if args.LeaderCommit > rf.commitIndex {
+		// set commitIndex = min(leaderCommit, index of last **new** entry)
 		rf.commitIndex = int(math.Min(float64(args.LeaderCommit), float64(len(rf.log)-1)))
 	}
 }
@@ -222,7 +228,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	defer rf.mu.Unlock()
 	DPrintf("[term %d]: Raft[%d] receive requestVote from Raft[%d]", rf.currentTerm, rf.me, args.CandidateId)
 
-	// the candidate is outdated, reject it !!
+	// reply false immediately if term < currentTerm
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
@@ -352,14 +358,21 @@ func (rf *Raft) callAppendEntries(server int, term int, prevLogIndex int, prevLo
 	if !ok {
 		return false
 	}
-	// other server has higher term !
 	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	// *** to avoid term confusion !!! ***
+	// compare the current term with the term you sent in your original RPC.
+	// If the two are different, drop the reply and return
+	if term != rf.currentTerm {
+		return false
+	}
+
+	// other server has higher term !
 	if reply.Term > rf.currentTerm {
 		rf.currentTerm = reply.Term
 		rf.state = FOLLOWER
 		rf.votedFor = -1
 	}
-	rf.mu.Unlock()
 	return reply.Success
 
 }
@@ -405,14 +418,22 @@ func (rf *Raft) callRequestVote(server int, term int, lastlogidx int, lastlogter
 	if !ok {
 		return false
 	}
-	// other server has higher term !
+
 	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	// *** to avoid term confusion !!! ***
+	// compare the current term with the term you sent in your original RPC.
+	// If the two are different, drop the reply and return
+	if term != rf.currentTerm {
+		return false
+	}
+
+	// other server has higher term !
 	if reply.Term > rf.currentTerm {
 		rf.currentTerm = reply.Term
 		rf.state = FOLLOWER
 		rf.votedFor = -1
 	}
-	rf.mu.Unlock()
 	return reply.VoteGranted
 }
 
@@ -429,7 +450,9 @@ func (rf *Raft) startElection() {
 	rf.mu.Unlock()
 	DPrintf("[term %d]:Raft [%d][state %d] starts an election", term, rf.me, rf.state)
 	// send requestVote RPCs to all other servers
-	votes := 1 // vote for self
+	votes := 1                // vote for self
+	electionFinished := false // this round of election is finished
+	var voteMutex sync.Mutex
 	for server := range rf.peers {
 		if server == rf.me {
 			DPrintf("vote for self : Raft[%d]", rf.me)
@@ -437,18 +460,18 @@ func (rf *Raft) startElection() {
 		}
 		go func(server int) {
 			voteGranted := rf.callRequestVote(server, term, lastlogidx, lastlogterm)
-			rf.mu.Lock()
-			defer rf.mu.Unlock()
-			if rf.state == LEADER || rf.state == FOLLOWER {
-				return
-			}
-			if voteGranted {
+			voteMutex.Lock()
+			if voteGranted && !electionFinished {
 				votes++
 				if votes*2 > len(rf.peers) {
+					electionFinished = true
+					rf.mu.Lock()
 					rf.state = LEADER
+					rf.mu.Unlock()
 					go rf.leaderHeartBeat()
 				}
 			}
+			voteMutex.Unlock()
 		}(server)
 	}
 }
@@ -465,6 +488,9 @@ func (rf *Raft) electionChecker() {
 		rf.mu.Lock()
 		// if timeout and the server is not a leader, start election
 		if time.Since(rf.timestamp) > time.Duration(timeout)*time.Millisecond && rf.state != LEADER {
+			// start a new go routine to do the election. This is important
+			// so that if you are a candidate (i.e., you are currently running an election),
+			// but the election timer fires, you should start another election.
 			go rf.startElection()
 		}
 		rf.mu.Unlock()
