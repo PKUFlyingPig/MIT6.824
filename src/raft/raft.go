@@ -179,8 +179,6 @@ type AppendEntriesReply struct {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	// reset timer
-	rf.timestamp = time.Now()
 
 	// other server has higher term !
 	if args.Term > rf.currentTerm {
@@ -194,6 +192,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		reply.Success = false
 		return
 	}
+
+	// to reach this line, the sender must have equal or higher term than me(very likely to be the current leader), reset timer
+	rf.timestamp = time.Now()
+
 	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
 		reply.Success = false
 		return
@@ -219,25 +221,30 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	DPrintf("[term %d]: Raft[%d] receive requestVote from Raft[%d]", rf.currentTerm, rf.me, args.CandidateId)
-	// reset timer
-	rf.timestamp = time.Now()
 
+	// the candidate is outdated, reject it !!
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
 		return
 	}
+
 	// other server has higher term !
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.state = FOLLOWER
 		rf.votedFor = -1
 	}
+
 	reply.Term = rf.currentTerm
+	// this server has not voted for other server in this term
 	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
 		lastlogterm := rf.log[len(rf.log)-1].Term
+		// the candidate's is at least as up-to-date as receiver's log, grant vote !!
 		if args.LastLogTerm > lastlogterm ||
 			(args.LastLogTerm == lastlogterm && args.LastLogIndex >= len(rf.log)-1) {
+			// reset timer only when you **grant** the vote for another server
+			rf.timestamp = time.Now()
 			rf.votedFor = args.CandidateId
 			reply.VoteGranted = true
 			DPrintf("[term %d]: Raft [%d] vote for Raft [%d]", rf.currentTerm, rf.me, rf.votedFor)
