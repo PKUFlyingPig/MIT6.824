@@ -310,13 +310,21 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	// Your code here (2B).
 	index := -1
 	term := -1
-	isLeader := true
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	// if the Raft instance is not the leader or has been killed, return gracefully
+	if rf.state != LEADER || rf.killed() {
+		return index, term, false
+	}
+	// append the entry to Raft's log
+	index = len(rf.log)
+	term = rf.currentTerm
+	rf.log = append(rf.log, LogEntry{Term: rf.currentTerm, Command: command})
 
-	// Your code here (2B).
-
-	return index, term, isLeader
+	return index, term, true
 }
 
 //
@@ -467,6 +475,11 @@ func (rf *Raft) startElection() {
 					electionFinished = true
 					rf.mu.Lock()
 					rf.state = LEADER
+					// reinitialize nextIndex and matchIndex after election
+					for i := 0; i < len(rf.peers); i++ {
+						rf.nextIndex[i] = len(rf.log) // rf.log indexed from 1
+						rf.matchIndex[i] = 0
+					}
 					rf.mu.Unlock()
 					go rf.leaderHeartBeat()
 				}
@@ -529,9 +542,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
-	for i := range rf.nextIndex {
-		rf.nextIndex[i] = len(rf.log) // rf.log indexed from 1
-	}
 
 	// start a background goroutine that will kick off leader election periodically
 	// by sending out RequestVote RPCs when it hasn't heard from another peer for a while.
